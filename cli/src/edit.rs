@@ -15,10 +15,10 @@
 //! [knows about]: ../src/edit/lib.rs.html#31-61
 
 use std::{
-    env,
+    env::{self},
     ffi::OsStr,
     fs,
-    io::{Error, ErrorKind, Result, Write},
+    io::{BufWriter, Error, ErrorKind, Result, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -376,22 +376,23 @@ impl Edit {
     }
 
     fn edit_bytes<B: AsRef<[u8]>>(&self, buf: B) -> Result<Vec<u8>> {
+        let dir = tempfile::tempdir()?;
+        let dir = dir.path();
         let mut builder = Builder::new();
-        if let Some(filename) = self.filename.as_ref() {
-            builder.suffix(filename)
+        let path = if let Some(filename) = self.filename.as_ref() {
+            dir.join(filename)
         } else {
-            builder.suffix(".txt")
+            builder.suffix(".txt").tempfile_in(&dir)?.path().to_owned()
         };
 
-        let mut file = builder.tempfile()?;
+        let mut file = BufWriter::new(std::fs::File::create(&path)?);
         file.write_all(buf.as_ref())?;
+        file.flush()?;
 
-        let path = file.into_temp_path();
         self.edit_file(&path)?;
 
         let edited = fs::read(&path)?;
 
-        path.close()?;
         Ok(edited)
     }
 

@@ -1,29 +1,36 @@
 use anyhow::Result;
+use crossterm::style::Color;
 use std::{
     fs::File,
     io::{BufReader, BufWriter, Write},
     path::{Path, PathBuf},
 };
-use tui::text::Spans;
 
 use serde::{Deserialize, Serialize};
 
 use crate::highlighter::CodeHighligher;
 
-pub trait ITemaplteRepository<'a> {
-    fn get(&self, name: &str) -> Option<&'a Template>;
-    fn list(&self) -> &'a Vec<Template>;
-    fn search(&self, query: &str) -> Vec<&'a Template>;
-    fn put(&mut self, template: Template<'a>) -> Result<()>;
+pub trait ITemaplteRepository {
+    fn get(&self, name: &str) -> Option<&Template>;
+    fn list(&self) -> &Vec<Template>;
+    fn search(&self, query: &str) -> Vec<&Template>;
+    fn put(&mut self, template: Template) -> Result<()>;
 }
 
-pub struct JSONTemplateRepository<'a> {
-    templates: Vec<Template<'a>>,
+pub struct JSONTemplateRepository {
+    templates: Vec<Template>,
 }
 
-impl<'a> JSONTemplateRepository<'a> {
+impl JSONTemplateRepository {
     pub fn load<P: AsRef<Path>>(path: &P) -> Result<Self> {
+        if !path.as_ref().exists() {
+            return Ok(Self {
+                templates: Vec::new(),
+            });
+        };
+
         let f = File::open(path)?;
+
         let rdr = BufReader::new(f);
         let templates: Vec<Template> = serde_json::from_reader(rdr)?;
 
@@ -39,12 +46,12 @@ impl<'a> JSONTemplateRepository<'a> {
 
         let f = File::create(path)?;
         let mut writer = BufWriter::new(f);
-        writer.write_all(s.as_bytes())?;        
+        writer.write_all(s.as_bytes())?;
         Ok(())
     }
 }
 
-impl<'a> Default for JSONTemplateRepository<'a> {
+impl Default for JSONTemplateRepository {
     fn default() -> Self {
         Self {
             templates: Vec::new(),
@@ -52,21 +59,26 @@ impl<'a> Default for JSONTemplateRepository<'a> {
     }
 }
 
-impl<'a> ITemaplteRepository<'a> for JSONTemplateRepository<'a> {
-    fn put(&mut self, template: Template<'a>) -> Result<()> {
-        self.templates.push(template);
+impl ITemaplteRepository for JSONTemplateRepository {
+    fn put(&mut self, template: Template) -> Result<()> {
+        if let Some(_template) = self.templates.iter_mut().find(|t| t.name == template.name) {
+            *_template = template;
+        } else {
+            self.templates.push(template);
+        }
+
         Ok(())
     }
 
-    fn get(&self, name: &str) -> Option<&'a Template> {
+    fn get(&self, name: &str) -> Option<&Template> {
         self.templates.iter().find(|template| template.name == name)
     }
 
-    fn list(&self) -> &'a Vec<Template> {
+    fn list(&self) -> &Vec<Template> {
         &self.templates
     }
 
-    fn search(&self, query: &str) -> Vec<&'a Template> {
+    fn search(&self, query: &str) -> Vec<&Template> {
         self.templates
             .iter()
             .filter(|template| {
@@ -82,16 +94,16 @@ impl<'a> ITemaplteRepository<'a> for JSONTemplateRepository<'a> {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct Template<'a> {
+pub struct Template {
     name: String,
     ext: Option<String>,
     description: Option<String>,
     template: String,
     #[serde(skip)]
-    pub highlighted_template: Option<Vec<Spans<'a>>>,
+    pub highlighted_template: Option<Vec<(String, Color)>>,
 }
 
-impl<'a> Template<'a> {
+impl Template {
     pub fn new(name: String, description: Option<String>, template: String) -> Self {
         let ext = PathBuf::from(&name)
             .extension()
@@ -106,13 +118,12 @@ impl<'a> Template<'a> {
         }
     }
 
-    pub fn highlight(&'a mut self) -> Result<()> {
+    pub fn highlight(&mut self) -> Result<()> {
         let highlighter = CodeHighligher::default();
-
         self.highlighted_template = if let Some(ext) = self.ext.as_ref() {
             Some(highlighter.highlight(ext, &self.template)?)
         } else {
-            Some(highlighter.highlight("txt", &&self.template)?)
+            Some(highlighter.highlight("txt", &self.template)?)
         };
 
         Ok(())
