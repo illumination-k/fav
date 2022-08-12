@@ -35,7 +35,9 @@ impl Default for App {
 
 pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> Result<()> {
     loop {
-        terminal.draw(|f| { ui(f, &app).unwrap(); })?;
+        terminal.draw(|f| {
+            ui(f, &app).unwrap();
+        })?;
 
         if let Event::Key(key) = event::read()? {
             match app.mode {
